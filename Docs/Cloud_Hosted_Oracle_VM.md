@@ -48,6 +48,90 @@ timer1 = setInterval(() => {
 
 **Please note that this can take a while, it took me about 2 hours to get it working.**
 
+## Reclaim 15GB of `/var/oled`
+
+Source: https://www.reddit.com/r/oraclecloud/comments/ywwp41/reclaiming_10gb_varoled/
+
+You can see that 15GB are completely unusable with `lsblk`:
+```sh
+[opc@your-machine ~]$ lsblk
+
+NAME               MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
+sda                  8:0    0 46.6G  0 disk
+├─sda1               8:1    0  100M  0 part /boot/efi
+├─sda2               8:2    0    2G  0 part /boot
+└─sda3               8:3    0 44.5G  0 part
+  ├─ocivolume-root 252:0    0 29.5G  0 lvm  /
+  └─ocivolume-oled 252:1    0   15G  0 lvm  /var/oled
+```
+
+To reclaim them, run:
+* `sudo umount /var/oled`
+    * If "target is busy", run `sudo dnf remove pcp` before.
+* `sudo dnf remove pcp`
+* `sudo umount /var/oled`
+* `sudo mkdir /var/oled/crash`
+* `sudo lvremove /dev/mapper/ocivolume-oled`
+* `sudo xfs_growfs -d /dev/mapper/ocivolume-root`
+
+Now run `df -h /`, you should have successfully reclaimed your 15GB:
+```sh
+[opc@your-machine ~]$ df -h /
+Filesystem                  Size  Used Avail Use% Mounted on
+/dev/mapper/ocivolume-root   45G   12G   34G  26% /
+```
+
+Then edit `/etc/fstab`:
+* `sudo nano /etc/fstab`
+* Remove the line containing "/var/oled", or add a `#` at the beggining to comment it out.
+
+
+## Firewall (with firewalld)
+
+Open a port publicly:
+* Open a port (TCP and UDP):
+    ```sh
+    sudo firewall-cmd --permanent --zone=public --add-port=25565/tcp
+
+    sudo firewall-cmd --permanent --zone=public --add-port=25565/udp
+    ```
+* Cancel:
+    ```sh
+    sudo firewall-cmd --permanent --zone=public --remove-port=25565/tcp
+
+    sudo firewall-cmd --permanent --zone=public --remove-port=25565/udp
+    ```
+* See all open ports:
+    ```sh
+    sudo firewall-cmd --zone=public --list-ports
+    ```
+
+Reject an IP adress:
+* Apply :
+    ```sh
+    sudo firewall-cmd --permanent --add-rich-rule="rule family='ipv4' source address='51.15.34.47' reject"
+    ```
+* Cancel :
+    ```sh
+    sudo firewall-cmd --permanent --remove-rich-rule="rule family='ipv4' source address='51.15.34.47' reject"
+    ```
+    > _This is a real abusing IP example: https://www.abuseipdb.com/check/51.15.34.47_
+
+Reload **(REQUIRED)**:
+```sh
+sudo firewall-cmd --reload
+```
+
+Firewall status:
+* Check if firewalld is active:
+    ```sh
+    sudo systemctl status firewalld
+    ```
+* Get firewalld config:
+    ```sh
+    sudo firewall-cmd --list-all
+    ```
+
 ## Additional information
 
 ### A. Install/Update JDK
